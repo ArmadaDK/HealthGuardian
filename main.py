@@ -22,6 +22,16 @@ class AlarmWorker(threading.Thread):
             alarm_type = self.queue.get()
             if alarm_type is None: break
             frequency, duration = alarm_type
+            # 1. 发送一个几乎听不见的低频脉冲 (37Hz 是 winsound 的极限低频)
+            # 这一步是为了强行“踢醒”蓝牙耳机的音频链路
+            winsound.Beep(37, 50)
+
+            # 2. 短暂补偿：给蓝牙芯片 100ms 的稳定时间
+            # 这个延迟在后台线程执行，不会卡顿主界面的视频流
+            time.sleep(0.1)
+
+            # 3. 正式报警
+            # 此时蓝牙链路已激活，声音可以完整地从第一毫秒被听到
             winsound.Beep(frequency, duration)
             self.queue.task_done()
 
@@ -31,13 +41,12 @@ class AlarmWorker(threading.Thread):
             self.queue.put((freq, duration))
 
 
-# --- 修改后的主类 ---
 class ModernHealthGuardian:
     def __init__(self, model_path='face_landmarker_v2_with_blendshapes.task'):
         # 初始化报警器
         self.alarm = AlarmWorker()
 
-        # MediaPipe 初始化 (保持不变)
+        # MediaPipe 初始化
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.FaceLandmarkerOptions(
             base_options=base_options,
@@ -95,7 +104,7 @@ class ModernHealthGuardian:
                         self.baseline_dist /= 50
                         self.calibrated = True
                 else:
-                    # --- 重点：使用 self.alarm.trigger 替代 winsound.Beep ---
+                    # --- 使用 self.alarm.trigger 替代 winsound.Beep ---
                     # 前倾警告
                     if dist > self.baseline_dist * 1.25:
                         cv2.putText(frame, "TOO CLOSE!", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
@@ -106,7 +115,7 @@ class ModernHealthGuardian:
                         cv2.putText(frame, "BLINK NOW!", (30, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                         self.alarm.trigger(800, 100)
 
-                # UI 绘制（略）
+                # UI 绘制
                 color = (0, 255, 0) if ear > 0.2 else (0, 0, 255)
                 cv2.putText(frame, f"EAR: {ear:.2f}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
